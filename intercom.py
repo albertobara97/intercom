@@ -52,21 +52,17 @@ class Intercom:
         receiving_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         listening_endpoint = ("0.0.0.0", self.listening_port)
         receiving_sock.bind(listening_endpoint)
-        
-        f=open("intercom.txt","w")
+
         q = queue.Queue(maxsize=100000)
 
         def receive_and_buffer():
-
             message, source_address = receiving_sock.recvfrom(Intercom.max_packet_size)
             q.put(message)
         
         def record_send_and_play(indata, outdata, frames, time, status):
             sending_sock.sendto(indata, (self.destination_IP_addr, self.destination_port))
-
             try:
                 message = q.get_nowait()
-                f.write("mensaje = " + str(message) + "\n")
             except queue.Empty:
                 message = numpy.zeros((self.samples_per_chunk, self.number_of_channels), self.dtype)
             outdata[:] = numpy.frombuffer(message, numpy.int16).reshape(self.samples_per_chunk, self.number_of_channels)
@@ -95,70 +91,3 @@ if __name__ == "__main__":
     args = parser.parse_args()
     intercom.init(args)
     intercom.run()
-    
-#-------------------------------------------------------------------------------
-
-class Inicio(Intercom):
-
-    max_packet_size = 32768                                                     # In bytes
-   
-    def init(self, args):
-        self.bytes_per_sample = args.bytes_per_sample
-        self.number_of_channels = args.number_of_channels
-        self.samples_per_second = args.samples_per_second
-        self.samples_per_chunk = args.samples_per_chunk
-        self.packet_format = "!i" + str(self.samples_per_chunk)+"h"             # <chunk_number, chunk_data>
-        self.listening_port = args.mlp
-        self.destination_IP_addr = args.ia
-        self.destination_port = args.ilp
-
-        if __debug__:
-            print("bytes_per_sample={}".format(self.bytes_per_sample))
-            print("number_of_channels={}".format(self.number_of_channels))
-            print("samples_per_second={}".format(self.samples_per_second))
-            print("samples_per_chunk={}".format(self.samples_per_chunk))
-            print("listening_port={}".format(self.listening_port))
-            print("destination_IP_address={}".format(self.destination_IP_addr))
-            print("destination_port={}".format(self.destination_port))
-
-        if self.bytes_per_sample == 1:
-            self.dtype = numpy.int8
-        elif self.bytes_per_sample == 2:
-            self.dtype = numpy.int16
-
-    def run(self):
-        print("Usando run modificado")
-        buffer = []
-             
-        def receive_and_buffer():
-            message, source_address = receiving_sock.recvfrom(
-                Intercom.max_packet_size)
-            buffer.insert(index, message)
-        
-        def record_send_and_play(indata, outdata, frames, time, status):
-            sending_sock.sendto(indata,(self.destination_IP_addr, self.destination_port))
-            try:
-                message = q.get_nowait()
-            except queue.Empty:
-                message = numpy.zeros((self.samples_per_chunk, self.number_of_channels),self.dtype)
-            outdata[:] = numpy.frombuffer(message,numpy.int16).reshape(self.samples_per_chunk, self.number_of_channels)
-            if __debug__:
-                sys.stderr.write("."); sys.stderr.flush()
-
-        with sd.Stream(
-                samplerate=self.samples_per_second,
-                blocksize=self.samples_per_chunk,
-                dtype=self.dtype,
-                channels=self.number_of_channels,
-                callback=record_send_and_play):
-            print('-=- Press <CTRL> + <C> to quit -=-')
-            while True:
-                receive_and_buffer()
-        
-
-    if __name__ == "__main__":
-
-        inicio = Inicio(intercom)
-        inicio.run()
-    
-    
