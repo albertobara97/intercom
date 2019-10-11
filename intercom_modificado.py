@@ -1,40 +1,35 @@
-# No video, no DWT, no compression, no bitplanes, no data-flow
-# control, no buffering. Only the transmission of the raw audio data,
-# splitted into chunks of fixed length.
-#
-# https://github.com/Tecnologias-multimedia/intercom
-#
-# Based on: https://python-sounddevice.readthedocs.io/en/0.3.13/_downloads/wire.py
-
+from intercom import Intercom
 
 import sounddevice as sd                                                        # https://python-sounddevice.readthedocs.io
 import numpy                                                                    # https://numpy.org/
 import argparse                                                                 # https://docs.python.org/3/library/argparse.html
 import socket                                                                   # https://docs.python.org/3/library/socket.html
-                                                               
+import queue
+import struct
 
 if __debug__:
     import sys
 
-class Intercom:
+class Intercom_modificado(Intercom):
 
     max_packet_size = 32768                                                     # In bytes
    
     def init(self, args):
         #He creado nueva variable chunk_number
         
-        self.chunk_number=0
+        self.chunk_number =  args.chunk_number
         self.bytes_per_sample = args.bytes_per_sample
         self.number_of_channels = args.number_of_channels
         self.samples_per_second = args.samples_per_second
         self.samples_per_chunk = args.samples_per_chunk
-        self.buffer=[0,0,0,0,0]
-        self.packet_format = "!i" + str(self.samples_per_chunk)+"h"             # <chunk_number, chunk_data>
+        self.buffer=[args.chunk_number]
+        self.packet_format = "!i" + str(self.samples_per_chunk*2)+"h"             # <chunk_number, chunk_data>
         self.listening_port = args.mlp
         self.destination_IP_addr = args.ia
         self.destination_port = args.ilp
         
         if __debug__:
+            print("chunk_number={}".format(self.chunk_number))
             print("bytes_per_sample={}".format(self.bytes_per_sample))
             print("number_of_channels={}".format(self.number_of_channels))
             print("samples_per_second={}".format(self.samples_per_second))
@@ -65,17 +60,20 @@ class Intercom:
             #Hacemos la transformación
             message, source_address = receiving_sock.recvfrom(
                 Intercom.max_packet_size)
-            message=numpy.frombuffer(
-                message,
-                numpy.int16).reshape(
-                   (self.samples_per_chunk+1), self.number_of_channels)
+            unpack=struct.unpack(self.packet_format,message)
+            
+       #     message=numpy.frombuffer(
+        #        message,
+         #       numpy.int16).reshape(
+          #         (self.samples_per_chunk), self.number_of_channels)
             #Recogemos el chunk insertado en el paquete de audio
-            numero=message[1024][0]
+            #numero=message[1024][0]
             #indata va a guardar el message, pero sin contar el último chunk, que es el número.
-            indata=numpy.delete(message,1024,axis=0)
+           # indata=numpy.delete(message,1024,axis=0)
            
-           #Metemos el paquete de sonido en el buffer de 0 a 4 posiciones
-            self.buffer[numero%5]=indata
+           #Metemos el paquete de sonido en el buffer de 0 a X posiciones
+            size = len(self.buffer)
+            self.buffer[unpack[0]%size]=unpack[:1]
             
             
             
@@ -85,23 +83,17 @@ class Intercom:
 
         def record_send_and_play(indata, outdata, frames, time, status):
             #Paquete se inicializa en vacío
-            paquete=[]
-            #vamos a meter todos los chunks de audio del paquete
-            for i in indata:
-                
-                paquete.append(numpy.array(i,numpy.int16))
-            #Vamos a meter un último elemento que será un trozo que contenga [número_trozo, -1]
-            paquete.append(numpy.array([self.chunk_number,-1],numpy.int16))   
-            #Paquete tiene 1025 elementos(1024 que pertenecen al paquete y un último 
-            # insertado que es el número de audio)
-          
-            #Hago la conversión para que funcione el sendto
-            paquete=numpy.array(paquete,numpy.int16)
+            paquete = numpy.array(indata,numpy.int16)
+            pack = struct.pack(self.packet_format, self.chunk_number, *paquete.flatten())
+            #pack = struct.pack(self.packet_format, 1, *indata)
+            
+            #ps = struct.pack(self.packet_format, )
+
           
             
             
             sending_sock.sendto(
-               paquete,
+               pack,
                 (self.destination_IP_addr, self.destination_port))
            
             self.chunk_number+=1
@@ -124,54 +116,22 @@ class Intercom:
             while True:
                 receive_and_buffer()
 
-    def parse_args(self):
-        parser = argparse.ArgumentParser(
-            description="Real-time intercom",
-            formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-        parser.add_argument("-s",
-                            "--samples_per_chunk",
-                            help="Samples per chunk.",
-                            type=int,
-                            default=1024)
-        parser.add_argument("-r",
-                            "--samples_per_second",
-                            help="Sampling rate in samples/second.",
-                            type=int,
-                            default=44100)
-        parser.add_argument("-c",
-                            "--number_of_channels",
-                            help="Number of channels.",
-                            type=int,
-                            default=2)
-        parser.add_argument("-b",
-                            "--bytes_per_sample",
-                            help="Depth in bytes of the samples of audio.",
-                            type=int,
-                            default=2)
-        parser.add_argument("-p",
-                            "--mlp",
-                            help="My listening port.",
-                            type=int,
-                            default=4444)
-        parser.add_argument("-i",
-                            "--ilp",
-                            help="Interlocutor's listening port.",
-                            type=int,
-                            default=4444)
-        parser.add_argument("-a",
-                            "--ia",
-                            help="Interlocutor's IP address or name.",
-                            type=str,
-                            default="localhost")
-
-        args = parser.parse_args()
-        return args
+    def add_args(self):
+        parser = argparse.ArgumentParser(description="Real-time intercom", formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+        parser.add_argument("-cn", "--chunk_number", help="Chunk number.", type=int, default=10)
+        parser.add_argument("-s", "--samples_per_chunk", help="Samples per chunk.", type=int, default=1024)
+        parser.add_argument("-r", "--samples_per_second", help="Sampling rate in samples/second.", type=int, default=44100)
+        parser.add_argument("-c", "--number_of_channels", help="Number of channels.", type=int, default=2)
+        parser.add_argument("-b", "--bytes_per_sample", help="Depth in bytes of the samples of audio.", type=int, default=2)
+        parser.add_argument("-p", "--mlp", help="My listening port.", type=int, default=4444)
+        parser.add_argument("-i", "--ilp", help="Interlocutor's listening port.", type=int, default=4444)
+        parser.add_argument("-a", "--ia", help="Interlocutor's IP address or name.", type=str, default="localhost")
+        return parser
 
 
-   
 if __name__ == "__main__":
-
-    intercom = Intercom()
-    args = intercom.parse_args()
+    intercom = Intercom_modificado()
+    parser = intercom.add_args()
+    args = parser.parse_args()
     intercom.init(args)
     intercom.run()
