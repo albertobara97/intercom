@@ -6,7 +6,7 @@ import argparse                                                                 
 import socket                                                                   # https://docs.python.org/3/library/socket.html
 import queue
 import struct
-
+import time
 if __debug__:
     import sys
 
@@ -56,23 +56,14 @@ class Intercom_modificado(Intercom):
 
 
         def receive_and_buffer():
-           
+            
             #Hacemos la transformación
             message, source_address = receiving_sock.recvfrom(
                 Intercom.max_packet_size)
             unpack=struct.unpack(self.packet_format,message)
             
-       #     message=numpy.frombuffer(
-        #        message,
-         #       numpy.int16).reshape(
-          #         (self.samples_per_chunk), self.number_of_channels)
-            #Recogemos el chunk insertado en el paquete de audio
-            #numero=message[1024][0]
-            #indata va a guardar el message, pero sin contar el último chunk, que es el número.
-           # indata=numpy.delete(message,1024,axis=0)
-           
-           #Metemos el paquete de sonido en el buffer de 0 a X posiciones
             size = len(self.buffer)
+            time.sleep(0.5) 
             self.buffer[unpack[0]%size]=unpack[:1]
             
             
