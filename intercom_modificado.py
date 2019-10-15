@@ -6,7 +6,6 @@ import argparse                                                                 
 import socket                                                                   # https://docs.python.org/3/library/socket.html
 import queue
 import struct
-import time
 if __debug__:
     import sys
 
@@ -65,7 +64,7 @@ class Intercom_modificado(Intercom):
             size = len(self.buffer)
             
             self.buffer[unpack[0]%size]=unpack[:1]
-            time.sleep(0.5) 
+            
             
             
             
