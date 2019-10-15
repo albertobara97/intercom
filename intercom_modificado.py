@@ -63,8 +63,9 @@ class Intercom_modificado(Intercom):
             unpack=struct.unpack(self.packet_format,message)
             
             size = len(self.buffer)
-            time.sleep(0.5) 
+            
             self.buffer[unpack[0]%size]=unpack[:1]
+            time.sleep(0.5) 
             
             
             
