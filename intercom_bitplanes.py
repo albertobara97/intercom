@@ -28,10 +28,11 @@ class Intercom_bitplanes(Intercom_buffer):
             #unpacked = np.array(chunk, dtype= np.uint16).view('uint8')
             chunk = np.array(chunk, dtype=np.uint8)
             unpacked = np.unpackbits(chunk)
-            #unpacked16 = np.asarray(unpacked, dtype=np.uint16)
+            unpacked16 = np.asarray(unpacked, dtype=np.uint16)
+            #print(unpacked)
             #print(*chunk)
             #Mete dentro del buffer el cuerpo del paquete, pero en un canal determinado
-            self._buffer[chunk_number % self.cells_in_buffer][:,channel] = unpacked
+            self._buffer[chunk_number % self.cells_in_buffer][:,channel] = unpacked << chunk_number
             
             return chunk_number
      
@@ -47,26 +48,10 @@ class Intercom_bitplanes(Intercom_buffer):
                 message = struct.pack(self.packet_format, self.recorded_chunk_number, 1, *bitsCanal1)
                 self.sending_sock.sendto(message, (self.destination_IP_addr, self.destination_port))
                 
-                print("bit de indata enviado:", 16-i, "\ncanal izquierdo:\n", bitsCanal0, "\ncanal derecho:\n", bitsCanal1)
-                print("--------------------------------------------------------")
+                #print("bit de indata enviado:", 16-i, "\ncanal izquierdo:\n", bitsCanal0, "\ncanal derecho:\n", bitsCanal1)
+                #print("--------------------------------------------------------")
 
-        #    Se crea bc0(bit canal 0) y bc1(bit canal 1). Van a ser literalmente una matriz de 1024 x 16 rellenado con 0
-        #    bc0=[[0]*16]*1024
-        #    bc1=[[0]*16]*1024
-        #    Se pasa a unsigned int 16 ambas matrices
-        #    bc0=np.array(bc0, np.uint16)
-        #    bc1=np.array(bc1, np.uint16)
-        #    for i in range(-15,1):
-        #        i=i*(-1)
-        #        #En la columna 15-i(15 - i es para rellenar empezando desde 0 y acabando en 15).Rellenamos si el bit i es 0 o 1.
-        #        bc0[:,15-i]=((indata[:,0] >> i) & 1)
-        #        #Se envia transformando packbits a 16 bits. En este caso necesitamos 1026 elementos: nº de chunk, canal y los 1024 elementos del paquete.
-        #        message = struct.pack(self.packet_format,self.recorded_chunk_number,0,*np.packbits(bc0.reshape(-1, 2, 8)[:, ::-1]).view(np.uint16).flatten())
-        #        self.sending_sock.sendto(message, (self.destination_IP_addr, self.destination_port))
-        #
-        #        bc1[:,15-i]=((indata[:,1] >> i) & 1)
-        #        message = struct.pack(self.packet_format,self.recorded_chunk_number,1,*np.packbits(bc1.reshape(-1, 2, 8)[:, ::-1]).view(np.uint16).flatten())
-        #        self.sending_sock.sendto(message, (self.destination_IP_addr, self.destination_port))
+
             self.recorded_chunk_number = (self.recorded_chunk_number + 1) % self.MAX_CHUNK_NUMBER
             chunk = self._buffer[self.played_chunk_number % self.cells_in_buffer]
             self._buffer[self.played_chunk_number % self.cells_in_buffer] = self.generate_zero_chunk()

@@ -24,7 +24,9 @@ class Intercom_bitplanes(Intercom_buffer):
             #Ahora necesitamos el numero de chunk,el canal y el paquete
             chunk_number,channel, *chunk = struct.unpack(self.packet_format, message)
             #Mete dentro del buffer el cuerpo del paquete, pero en un canal determinado
-            self._buffer[chunk_number % self.cells_in_buffer][:,channel]=chunk
+            unpacked = np.unpackbits(chunk,np.uint16)
+            unpacked=np.array(unpacked,dtype=np.uint16)
+            self._buffer[chunk_number % self.cells_in_buffer][:,channel]=unpacked
          
             return chunk_number
      
@@ -42,7 +44,6 @@ class Intercom_bitplanes(Intercom_buffer):
                 #Se envia transformando packbits a 16 bits. En este caso necesitamos 1026 elementos: nº de chunk, canal y los 1024 elementos del paquete.
                 message = struct.pack(self.packet_format,self.recorded_chunk_number,0,*np.packbits(bc0.reshape(-1, 2, 8)[:, ::-1]).view(np.uint16).flatten())
                 self.sending_sock.sendto(message, (self.destination_IP_addr, self.destination_port))
-
                 bc1[:,15-i]=((indata[:,1] >> i) & 1)
                 message = struct.pack(self.packet_format,self.recorded_chunk_number,1,*np.packbits(bc1.reshape(-1, 2, 8)[:, ::-1]).view(np.uint16).flatten())
                 self.sending_sock.sendto(message, (self.destination_IP_addr, self.destination_port))
