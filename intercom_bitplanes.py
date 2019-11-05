@@ -26,11 +26,12 @@ class Intercom_bitplanes(Intercom_buffer):
             #Ahora necesitamos el numero de chunk,el canal y el paquete
             chunk_number, channel, *chunk = struct.unpack(self.packet_format, message)
             #unpacked = np.array(chunk, dtype= np.uint16).view('uint8')
+            chunk = np.array(chunk, dtype=np.uint8)
             unpacked = np.unpackbits(chunk)
-            #print("############ ", len(xd))
+            #unpacked16 = np.asarray(unpacked, dtype=np.uint16)
             #print(*chunk)
             #Mete dentro del buffer el cuerpo del paquete, pero en un canal determinado
-            self._buffer[chunk_number % self.cells_in_buffer][:,channel] = [unpacked][channel]
+            self._buffer[chunk_number % self.cells_in_buffer][:,channel] = unpacked
             
             return chunk_number
      
@@ -38,6 +39,8 @@ class Intercom_bitplanes(Intercom_buffer):
             for i in range(1, 16):
                 bitsCanal0 = np.packbits(indata[:,0]>>(16-i) & 1)
                 bitsCanal1 = np.packbits(indata[:,1]>>(16-i) & 1)
+                #bitsCanal0 = np.array(bitsCanal0, dtype=np.uint8)
+                #bitsCanal1 = np.array(bitsCanal0, dtype=np.uint8)
                 message = struct.pack(self.packet_format, self.recorded_chunk_number, 0, *bitsCanal0)
                 self.sending_sock.sendto(message, (self.destination_IP_addr, self.destination_port))
                 
