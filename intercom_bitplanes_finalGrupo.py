@@ -16,7 +16,7 @@ class Intercom_bitplanes(Intercom_buffer):
     def run(self):
         
         #self.packet_format = f"HH{(1024)}H"
-        self.packet_format = f"HH{(128)}H"
+        self.packet_format = f"HHH{(128)}B"
         self.recorded_chunk_number = 0
         self.played_chunk_number = 0
 
@@ -24,7 +24,7 @@ class Intercom_bitplanes(Intercom_buffer):
         def receive_and_buffer():
             message, source_address = self.receiving_sock.recvfrom(Intercom_buffer.MAX_MESSAGE_SIZE)
             #Ahora necesitamos el numero de chunk,el canal y el paquete
-            chunk_number, channel, *chunk = struct.unpack(self.packet_format, message)
+            chunk_number, bitplane, channel, *chunk = struct.unpack(self.packet_format, message)
             #unpacked = np.array(chunk, dtype= np.uint16).view('uint8')
             chunk = np.array(chunk, dtype=np.uint8)
             unpacked = np.unpackbits(chunk)
@@ -32,7 +32,7 @@ class Intercom_bitplanes(Intercom_buffer):
             #print(unpacked)
             #print(*chunk)
             #Mete dentro del buffer el cuerpo del paquete, pero en un canal determinado
-            self._buffer[chunk_number % self.cells_in_buffer][:,channel] = unpacked << chunk_number
+            self._buffer[chunk_number % self.cells_in_buffer][:,channel] |= unpacked << bitplane
             
             return chunk_number
      
@@ -42,10 +42,10 @@ class Intercom_bitplanes(Intercom_buffer):
                 bitsCanal1 = np.packbits(indata[:,1]>>(16-i) & 1)
                 #bitsCanal0 = np.array(bitsCanal0, dtype=np.uint8)
                 #bitsCanal1 = np.array(bitsCanal0, dtype=np.uint8)
-                message = struct.pack(self.packet_format, self.recorded_chunk_number, 0, *bitsCanal0)
+                message = struct.pack(self.packet_format, self.recorded_chunk_number, i, 0, *bitsCanal0)
                 self.sending_sock.sendto(message, (self.destination_IP_addr, self.destination_port))
                 
-                message = struct.pack(self.packet_format, self.recorded_chunk_number, 1, *bitsCanal1)
+                message = struct.pack(self.packet_format, self.recorded_chunk_number, i, 1, *bitsCanal1)
                 self.sending_sock.sendto(message, (self.destination_IP_addr, self.destination_port))
                 
                 #print("bit de indata enviado:", 16-i, "\ncanal izquierdo:\n", bitsCanal0, "\ncanal derecho:\n", bitsCanal1)
