@@ -21,14 +21,25 @@ class Intercom_dfc(Intercom_binaural):
         indata[:,0] -= indata[:,1]
         self.record_and_send(indata)
         self._buffer[self.played_chunk_number % self.cells_in_buffer][:,0] += self._buffer[self.played_chunk_number % self.cells_in_buffer][:,1]
+        
         self.play(outdata)
 
     def record_and_send(self, indata):
         print("played chunk", self.played_chunk_number)
+       
+        if(self.saved[(self.played_chunk_number+1) % self.cells_in_buffer] >= 4 and self.saved[self.played_chunk_number % self.cells_in_buffer] < self.flow):
+            self.flow = self.saved[(self.played_chunk_number+1) % self.cells_in_buffer]
+
+        print("bitplane played: ", self.saved[(self.played_chunk_number+1) % self.cells_in_buffer], "flow: ", self.flow)
+
         self.saved[self.played_chunk_number % self.cells_in_buffer] = 0
+        self.chunkmemory[self.played_chunk_number%self.cells_in_buffer] = 0
         #self.saved[self.played_chunk_number] = self.played_chunk_number
         #print("Lista", *self.saved)
         for bitplane_number in range(self.number_of_channels*16-1, -1, -1):
+            #print("bitplane number: ", bitplane_number, "flow : ", self.flow)
+            if(bitplane_number >= self.flow):
+                break
             #self.saved[self.played_chunk_number] = bitplane_number
             #print("Lista", *self.saved)
             #cabecera = [self.recorded_chunk_number][bitplane_number]
@@ -62,15 +73,16 @@ class Intercom_dfc(Intercom_binaural):
         # del bitplane, sobreescribiriamos los valores de las columnas que no nos interesan tomar del array
         self._buffer[chunk_number % self.cells_in_buffer][:, bitplane_number%self.number_of_channels] |= (bitplane << bitplane_number//self.number_of_channels)
         
-        if(self.chunkmemory[chunk_number%self.cells_in_buffer] < chunk_number):
-            if(self.saved[chunk_number%self.cells_in_buffer] == self.flow and self.flow < 32):
-                self.flow += 1
+        #if(self.chunkmemory[chunk_number%self.cells_in_buffer] == 1):
+         #   self.chunkmemory[chunk_number%self.cells_in_buffer] = 0
+        if(self.saved[chunk_number%self.cells_in_buffer] == self.flow and self.flow < 32 and self.chunkmemory[chunk_number%self.cells_in_buffer] == 0):
+            #print("+1")
+            self.chunkmemory[chunk_number%self.cells_in_buffer] = 1
+            self.flow += 1
             #self.saved[chunk_number%self.cells_in_buffer] = 0
-            self.flow = min(self.saved)
-        #print(len(self._buffer))
         #print("El minimo actual es ", self.min)
 
-        self.chunkmemory[chunk_number%self.cells_in_buffer] = chunk_number
+        #self.chunkmemory[chunk_number%self.cells_in_buffer] = chunk_number
         self.saved[chunk_number%self.cells_in_buffer] += 1
         print("Lista", *self.saved)
         return chunk_number
@@ -78,6 +90,9 @@ class Intercom_dfc(Intercom_binaural):
     def play(self, outdata):
         #print("play ", outdata)
         chunk = self._buffer[self.played_chunk_number % self.cells_in_buffer]
+        print("save: ", self.saved[(self.played_chunk_number+1) % self.cells_in_buffer])
+        if(self.saved[(self.played_chunk_number+1) % self.cells_in_buffer] == self.flow and self.flow < 32):
+            self.flow += 1
         self._buffer[self.played_chunk_number % self.cells_in_buffer] = self.generate_zero_chunk()
         self.played_chunk_number = (self.played_chunk_number + 1) % self.cells_in_buffer
         outdata[:] = chunk
