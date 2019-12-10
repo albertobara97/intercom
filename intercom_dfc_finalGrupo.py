@@ -16,6 +16,7 @@ class Intercom_dfc(Intercom_binaural):
         self.saved = [0]*self.cells_in_buffer #64 de tamaño
         self.chunkmemory = [0]*self.cells_in_buffer
         self.flow = 32 #numero de bitplanes a enviar
+        self.packet_format = f"!HB{self.frames_per_chunk//8}BH"
 
     def record_send_and_play_stereo(self, indata, outdata, frames, time, status):
         indata[:,0] -= indata[:,1]
@@ -27,22 +28,21 @@ class Intercom_dfc(Intercom_binaural):
     def record_and_send(self, indata):
         print("played chunk", self.played_chunk_number)
        
-        if(self.saved[(self.played_chunk_number+1) % self.cells_in_buffer] >= 4 and self.saved[self.played_chunk_number % self.cells_in_buffer] < self.flow):
-            self.flow = self.saved[(self.played_chunk_number+1) % self.cells_in_buffer]
+        if(self.saved[self.played_chunk_number % self.cells_in_buffer] >= 4 and self.saved[self.played_chunk_number % self.cells_in_buffer] < self.flow):
+            self.flow = self.saved[self.played_chunk_number % self.cells_in_buffer]
 
-        print("bitplane played: ", self.saved[(self.played_chunk_number+1) % self.cells_in_buffer], "flow: ", self.flow)
+        print("bitplane played: ", self.saved[self.played_chunk_number % self.cells_in_buffer], "flow: ", self.flow)
 
         self.saved[self.played_chunk_number % self.cells_in_buffer] = 0
         self.chunkmemory[self.played_chunk_number%self.cells_in_buffer] = 0
-        #self.saved[self.played_chunk_number] = self.played_chunk_number
         #print("Lista", *self.saved)
+
         for bitplane_number in range(self.number_of_channels*16-1, -1, -1):
             #print("bitplane number: ", bitplane_number, "flow : ", self.flow)
-            if(bitplane_number >= self.flow):
+            if(bitplane_number < (32-self.flow)):
                 break
             #self.saved[self.played_chunk_number] = bitplane_number
             #print("Lista", *self.saved)
-            #cabecera = [self.recorded_chunk_number][bitplane_number]
             #: devuelve todo el contenido de ese lado del array. >> desplaza los bits recogidos de ese array tantas casillas como avanza la i 
             # en el bucle local. & 1 hace que cuando un bit es negativo, el desplazamiento no arrastre mas 1 creados por la propiedad de desplazar los bits de un numero negativo
             bitplane = (indata[:, bitplane_number%self.number_of_channels] >> bitplane_number//self.number_of_channels) & 1
@@ -51,17 +51,16 @@ class Intercom_dfc(Intercom_binaural):
             #Empaquetamos el array
             bitplane = np.packbits(bitplane)
             #Le damos forma al paquete que vamos a enviar con su formato de paquete, numero de chunk y todo el array del bitplane.
-            message = struct.pack(self.packet_format, self.recorded_chunk_number, bitplane_number, *bitplane)
+            message = struct.pack(self.packet_format, self.recorded_chunk_number, bitplane_number, *bitplane, self.flow)
             #Enviamos el mensaje con su formato
             self.sending_sock.sendto(message, (self.destination_IP_addr, self.destination_port))
         #Cuando se han enviado todos los planos de bits, esta variable aumenta en 1 para hacer un seguimiento del contador de chunks enviados.
         self.recorded_chunk_number = (self.recorded_chunk_number + 1) % self.MAX_CHUNK_NUMBER
 
-
     def receive_and_buffer(self):
         message, source_address = self.receiving_sock.recvfrom(Intercom_binaural.MAX_MESSAGE_SIZE)
         #Despieza el paquete recibido en varias variables
-        chunk_number, bitplane_number, *bitplane = struct.unpack(self.packet_format, message)
+        chunk_number, bitplane_number, *bitplane, self.flow = struct.unpack(self.packet_format, message)
         #Crea una variable y le da formato para hacer legible el array recibido
         bitplane = np.asarray(bitplane, dtype=np.uint8)
         #Desempaqueta los bits en el formato inicial de indata
@@ -73,31 +72,32 @@ class Intercom_dfc(Intercom_binaural):
         # del bitplane, sobreescribiriamos los valores de las columnas que no nos interesan tomar del array
         self._buffer[chunk_number % self.cells_in_buffer][:, bitplane_number%self.number_of_channels] |= (bitplane << bitplane_number//self.number_of_channels)
         
-        #if(self.chunkmemory[chunk_number%self.cells_in_buffer] == 1):
-         #   self.chunkmemory[chunk_number%self.cells_in_buffer] = 0
         if(self.saved[chunk_number%self.cells_in_buffer] == self.flow and self.flow < 32 and self.chunkmemory[chunk_number%self.cells_in_buffer] == 0):
-            #print("+1")
+
             self.chunkmemory[chunk_number%self.cells_in_buffer] = 1
             self.flow += 1
-            #self.saved[chunk_number%self.cells_in_buffer] = 0
-        #print("El minimo actual es ", self.min)
 
-        #self.chunkmemory[chunk_number%self.cells_in_buffer] = chunk_number
         self.saved[chunk_number%self.cells_in_buffer] += 1
-        print("Lista", *self.saved)
+        #print("Lista", *self.saved)
         return chunk_number
 
     def play(self, outdata):
-        #print("play ", outdata)
         chunk = self._buffer[self.played_chunk_number % self.cells_in_buffer]
-        print("save: ", self.saved[(self.played_chunk_number+1) % self.cells_in_buffer])
-        if(self.saved[(self.played_chunk_number+1) % self.cells_in_buffer] == self.flow and self.flow < 32):
+        print("save: ", self.saved[(self.played_chunk_number) % self.cells_in_buffer])
+        if(self.saved[(self.played_chunk_number) % self.cells_in_buffer] == self.flow and self.flow < 32):
             self.flow += 1
         self._buffer[self.played_chunk_number % self.cells_in_buffer] = self.generate_zero_chunk()
         self.played_chunk_number = (self.played_chunk_number + 1) % self.cells_in_buffer
         outdata[:] = chunk
         if __debug__:
             sys.stderr.write("."); sys.stderr.flush()
+
+    def tc2sm(self, x): #Función que transforma complemento 2 a signo magintud.
+        return ((x & 0x8000) | abs(x)).astype(np.int16)
+
+    def sm2tc(self, x): #Función que transforma signo magnitud a complemento 2.
+        m = x >> 15
+        return (~m & x) | (((x & 0x8000) - x) & m).astype(np.int16)
 
 if __name__ == "__main__":
     intercom = Intercom_dfc()
