@@ -83,6 +83,7 @@ class Intercom_DWT(Intercom_empty):
 
     def init(self, args):
         Intercom_empty.init(self, args)
+        self.packet_format = f"!HB{self.frames_per_chunk//8}BHH"
         self.zeros = 0
 
     def send(self, indata):
@@ -99,21 +100,60 @@ class Intercom_DWT(Intercom_empty):
             self.NOBPTS = self.max_NOBPTS
 
         self.flat = indata[:,0].flatten()
-        self.coeffs = pywt.wavedec(self.flat, "db5", mode='per')
+        self.coeffs_c0 = pywt.wavedec(self.flat, "db5", mode='per')
+        self.flat = indata[:,1].flatten()
+        self.coeffs_c1 = pywt.wavedec(self.flat, "db5", mode='per')
         #self.coeffs = np.array(self.coeffs)
-        self.coeffs,_ = pywt.coeffs_to_array(self.coeffs)
-        print("array: ", self.coeffs)
-        print("shape: ", self.coeffs.shape)
-        
-        self.sending_sock.sendto(self.coeffs, (self.destination_IP_addr, self.destination_port))
+        self.coeffs_c0,_ = pywt.coeffs_to_array(self.coeffs_c0)
+        self.coeffs_c1,_ = pywt.coeffs_to_array(self.coeffs_c1)
+        print("array: ", self.coeffs_c0)
+        print("array: ", self.coeffs_c1)
+        print("shape: ", self.coeffs_c1.shape)
+        print("shape: ", self.coeffs_c1.shape)
+        print("shape indata: ", indata.shape)
+
+        self.coeffs_c0 = np.array(self.coeffs_c0,dtype=np.uint32)
+        self.coeffs_c1 = np.array(self.coeffs_c1,dtype=np.uint32)
+
+        #self.send_bitplane(self.coeffs)
         #self.send_bitplane(self.coeffs, self.max_NOBPTS-2)
 
         last_BPTS = self.max_NOBPTS - self.NOBPTS - 1
-        #self.send_bitplane(indata, self.max_NOBPTS-1)
-        #self.send_bitplane(indata, self.max_NOBPTS-2)
+        self.send_bitplane(self.coeffs_c0, self.max_NOBPTS-1, 0)
+        self.send_bitplane(self.coeffs_c0, self.max_NOBPTS-2, 0)
+
+        self.send_bitplane(self.coeffs_c1, self.max_NOBPTS-1, 1)
+        self.send_bitplane(self.coeffs_c1, self.max_NOBPTS-2, 1)
+
         for bitplane_number in range(self.max_NOBPTS-3, last_BPTS, -1):
-            self.send_bitplane(indata, bitplane_number)
+            self.send_bitplane(self.coeffs_c0, bitplane_number, 0)
+            self.send_bitplane(self.coeffs_c1, bitplane_number, 1)
+
         self.recorded_chunk_number = (self.recorded_chunk_number + 1) % self.MAX_CHUNK_NUMBER
+
+
+    def send_bitplane(self, indata, bitplane_number, channel):
+        bitplane = (indata[:,] >> bitplane_number//self.number_of_channels) & 1
+        if np.any(bitplane): 
+            bitplane = bitplane.astype(np.uint8)
+            bitplane = np.packbits(bitplane)
+            message = struct.pack(self.packet_format, self.recorded_chunk_number, bitplane_number, self.received_bitplanes_per_chunk[(self.played_chunk_number+1) % self.cells_in_buffer]+1, *bitplane, channel)
+            self.sending_sock.sendto(message, (self.destination_IP_addr, self.destination_port))
+        else:
+            self.skipped_bitplanes[self.recorded_chunk_number % self.cells_in_buffer] += 1
+
+    
+    def receive_and_buffer(self):
+        message, source_address = self.receiving_sock.recvfrom(Intercom.MAX_MESSAGE_SIZE)
+        received_chunk_number, received_bitplane_number, *bitplane, channel = struct.unpack(self.packet_format, message)
+        bitplane = np.asarray(bitplane, dtype=np.uint8)
+        #Desempaqueta los bits en el formato inicial de indata
+        bitplane = np.unpackbits(bitplane)
+        #Transforma el array a in16 para hacer legible el nuevo array
+        bitplane = bitplane.astype(np.int16)
+
+        self._buffer[received_chunk_number % self.cells_in_buffer][:, channel] |= (bitplane << received_bitplane_number//self.number_of_channels)
+        return received_chunk_number
 
 if __name__ == "__main__":
     intercom = Intercom_DWT()
